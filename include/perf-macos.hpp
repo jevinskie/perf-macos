@@ -23,14 +23,18 @@
 #ifndef PERF_MACOS_HPP
 #define PERF_MACOS_HPP
 
+#include <cerrno>
+#include <cstring>
 #include <chrono>
 #include <dlfcn.h>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <pthread.h>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <type_traits>
 #include <vector>
 
 /**
@@ -82,7 +86,7 @@
 #ifdef CPU_X86_64
 #define KPC_CLASSES_MASK KPC_CLASS_CONFIGURABLE_MASK
 #else
-#define KPC_CLASSES_MASK (KPC_CLASS_CONFIGURABLE_MASK)
+#define KPC_CLASSES_MASK (KPC_CLASS_CONFIGURABLE_MASK | KPC_CLASS_FIXED_MASK)
 #endif
 
 #define KPERF_FRAMEWORK_PATH "/System/Library/PrivateFrameworks/kperf.framework/Versions/A/kperf"
@@ -110,7 +114,7 @@
  * ====================
  */
 namespace Perf {
-    enum Event {
+    enum Event : uint64_t {
 #ifdef CPU_X86_64
         instructions_retired = 0x00C0,
         l1_misses = 0x01CB,
@@ -122,9 +126,18 @@ namespace Perf {
         llc_references = 0x4F2E,
         reference_cycles = 0x013C,
 #elif defined(CPU_ARM64)
-        instructions_retired = 0x007d,
+        mapped_int_uops = 0x007c,
+        instructions_retired = 0x008c,
+        branch_instruction_retired = 0x008d,
+        branch_taken_retired = 0x0090,
+        uops_scheduled = 0x0052,
         cycles = 0x0002,
-        branch_instruction_retired = 0x007b,
+        l1d_st_miss = 0x00a2,
+        l1d_ld_miss = 0x00a3,
+        l1i_ld_miss = 0x00db,
+        mmu_faults = 0x000d,
+        atomic_fails = 0x00b4,
+        atomic_succs = 0x00b3,
 #endif
     };
 
@@ -158,15 +171,18 @@ namespace Perf {
          *
          * @param column_width width (in chars) of each table column
          */
-        void pretty_print(unsigned int column_width = 15) const {
+        void pretty_print(unsigned int column_width = 18) const {
+            auto cmpLambda = [](const Event &lhs, const Event &rhs) { return (std::underlying_type_t<Event>)(lhs) <= (std::underlying_type_t<Event>)(rhs); };
+            const std::map<Event, D, decltype(cmpLambda)> data_sorted{data.begin(), data.end(), cmpLambda};
+
             // Table header
             std::cout << std::setw(column_width) << "Elapsed [ns]";
-            for (const auto &it : data) { std::cout << std::setw(column_width) << human_readable_name(it.first); }
+            for (const auto &it : data_sorted) { std::cout << std::setw(column_width) << human_readable_name(it.first); }
             std::cout << std::endl;
 
             // Table row
             std::cout << std::setw(column_width) << std::to_string(time_delta_ns);
-            for (const auto &it : data) { std::cout << std::setw(column_width) << std::to_string(it.second); }
+            for (const auto &it : data_sorted) { std::cout << std::setw(column_width) << std::to_string(it.second); }
             std::cout << std::endl;
         }
 
@@ -209,6 +225,25 @@ namespace Perf {
                     return "LLC misses";
                 case reference_cycles:
                     return "Reference cycles";
+#elif defined(CPU_ARM64)
+                case branch_taken_retired:
+                    return "Branches taken";
+                case mapped_int_uops:
+                    return "Mapped int uop";
+                case uops_scheduled:
+                    return "uops scheduled";
+                case l1d_st_miss:
+                    return "L1D store miss";
+                case l1d_ld_miss:
+                    return "L1D load miss";
+                case l1i_ld_miss:
+                    return "L1I load miss";
+                case mmu_faults:
+                    return "MMU faults";
+                case atomic_fails:
+                    return "Atomic fails";
+                case atomic_succs:
+                    return "Atomic succs";
 #endif
                 default:
                     return "Unimplemented";
@@ -264,6 +299,8 @@ namespace Perf {
 #ifdef CPU_X86_64
             l1_misses, llc_misses, branch_misses_retired,
             l2_misses, llc_references, reference_cycles,
+#elif defined(CPU_ARM64)
+            uops_scheduled, l1d_ld_miss, l1d_st_miss, atomic_fails, atomic_succs,
 #endif
             })
             : measured_events(measured_events) {
@@ -348,7 +385,7 @@ namespace Perf {
 
         forceinline void configure_counters() {
             auto configs_cnt = kpc_get_config_count(KPC_CLASSES_MASK);
-            std::cout << "[Perf::Counter] configs_cnt: " << configs_cnt << std::endl;
+            // std::cout << "[Perf::Counter] configs_cnt: " << configs_cnt << std::endl;
 
             uint64_t configs[configs_cnt];
 
@@ -383,11 +420,10 @@ namespace Perf {
 
                 configs[i] = (0xFFFF & measured_events[i]);
             }
-            fprintf(stderr, "configure_counters() arm64 not fully implemented\n");
 #endif
 
             // set config
-            if (kpc_set_config(KPC_CLASSES_MASK, configs)) { PERF_ERROR("Could not configure counters"); }
+            if (kpc_set_config(KPC_CLASSES_MASK, configs)) { fprintf(stderr, "errno: %d err: %s\n", errno, strerror(errno)); PERF_ERROR("Could not configure counters"); }
 
             // TODO: figure out what this is supposed to do. Best guess: ARM specific, not needed for intel (appears to be NOOP in this case)
             // https://github.com/apple/darwin-xnu/blob/8f02f2a044b9bb1ad951987ef5bab20ec9486310/osfmk/kern/kpc.h#L181
@@ -430,6 +466,8 @@ namespace Perf {
 #ifdef CPU_X86_64
                         l1_misses, llc_misses, branch_misses_retired,
                         l2_misses, llc_references, reference_cycles,
+#elif defined(CPU_ARM64)
+                        uops_scheduled, l1d_ld_miss, l1d_st_miss, atomic_fails, atomic_succs
 #endif
             })
             : Counter(measured_events), N(N) {
