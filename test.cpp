@@ -1,4 +1,4 @@
-#include "perf-macos.hpp"
+#include <perf-macos.hpp>
 
 #include <iostream>
 #include <string>
@@ -17,9 +17,12 @@ void basic_usage() {
     counter.start();
 
     // Code to benchmark. Iterated n-times to get accurate measurements
-    for (uint64_t i = 0; i < n; i++) {
-        const auto val = 0xABCDEF03 / (i + 1);
-        DoNotEliminate(val);
+    for (int64_t i = 0; i < n; i++) {
+        // const auto val = 0xABCDEF03 / (i + 1);
+        // DoNotEliminate(val);
+        register int64_t ireg asm("x0") = 0;
+        asm volatile("add x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\nadd x0, x0, x0\n" : "=r" (ireg) : "x0" (ireg));
+        DoNotEliminate(ireg);
     }
 
     // Stop measuring

@@ -82,7 +82,7 @@
 #ifdef CPU_X86_64
 #define KPC_CLASSES_MASK KPC_CLASS_CONFIGURABLE_MASK
 #else
-#define KPC_CLASSES_MASK (KPC_CLASS_CONFIGURABLE_MASK | KPC_CLASS_FIXED_MASK)
+#define KPC_CLASSES_MASK (KPC_CLASS_CONFIGURABLE_MASK)
 #endif
 
 #define KPERF_FRAMEWORK_PATH "/System/Library/PrivateFrameworks/kperf.framework/Versions/A/kperf"
@@ -122,7 +122,9 @@ namespace Perf {
         llc_references = 0x4F2E,
         reference_cycles = 0x013C,
 #elif defined(CPU_ARM64)
-#error "arm64 not fully implemented"
+        instructions_retired = 0x007d,
+        cycles = 0x0002,
+        branch_instruction_retired = 0x007b,
 #endif
     };
 
@@ -190,22 +192,24 @@ namespace Perf {
             switch (event) {
                 case instructions_retired:
                     return "Instructions";
+                case cycles:
+                    return "Cycles";
+                case branch_instruction_retired:
+                    return "Branches";
+#ifdef CPU_X86_64
                 case l1_misses:
                     return "L1 misses";
                 case llc_misses:
                     return "LLC misses";
                 case branch_misses_retired:
                     return "Branch misses";
-                case cycles:
-                    return "Cycles";
-                case branch_instruction_retired:
-                    return "Branches";
                 case l2_misses:
                     return "L2 misses";
                 case llc_references:
                     return "LLC misses";
                 case reference_cycles:
                     return "Reference cycles";
+#endif
                 default:
                     return "Unimplemented";
             }
@@ -255,8 +259,13 @@ namespace Perf {
          * On systems with fewer perf counter registers than requested counter
          * @param measured_events
          */
-        Counter(std::vector<Event> measured_events = {instructions_retired, l1_misses, llc_misses,
-                                                      branch_misses_retired, cycles, branch_instruction_retired})
+        Counter(std::vector<Event> measured_events = {
+            instructions_retired, cycles, branch_instruction_retired,
+#ifdef CPU_X86_64
+            l1_misses, llc_misses, branch_misses_retired,
+            l2_misses, llc_references, reference_cycles,
+#endif
+            })
             : measured_events(measured_events) {
             // Load kperf to communicate with XNU api
             load_kperf();
@@ -339,6 +348,8 @@ namespace Perf {
 
         forceinline void configure_counters() {
             auto configs_cnt = kpc_get_config_count(KPC_CLASSES_MASK);
+            std::cout << "[Perf::Counter] configs_cnt: " << configs_cnt << std::endl;
+
             uint64_t configs[configs_cnt];
 
 #ifdef CPU_X86_64
@@ -363,7 +374,16 @@ namespace Perf {
                 configs[i] = (0xFFFF & measured_events[i]) | INTEL_CONF_CTR_USER_MODE;
             }
 #elif defined(CPU_ARM64)
-#error "arm64 not fully implemented"
+            for (size_t i = 0; i < configs_cnt; i++) {
+                if (i >= measured_events.size()) {
+                    std::cout << "[Perf::Counter] More configurable perf registers are available than were selected"
+                              << std::endl;
+                    break;
+                }
+
+                configs[i] = (0xFFFF & measured_events[i]);
+            }
+            fprintf(stderr, "configure_counters() arm64 not fully implemented\n");
 #endif
 
             // set config
@@ -405,8 +425,13 @@ namespace Perf {
          * @param measured_events
          */
         BlockCounter(const size_t N,
-                     std::vector<Event> measured_events = {instructions_retired, l1_misses, llc_misses,
-                                                           branch_misses_retired, cycles, branch_instruction_retired})
+                     std::vector<Event> measured_events = {
+                        instructions_retired, cycles, branch_instruction_retired,
+#ifdef CPU_X86_64
+                        l1_misses, llc_misses, branch_misses_retired,
+                        l2_misses, llc_references, reference_cycles,
+#endif
+            })
             : Counter(measured_events), N(N) {
             start();
         }
