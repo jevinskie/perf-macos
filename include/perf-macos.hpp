@@ -36,6 +36,7 @@
 #include <unordered_map>
 #include <type_traits>
 #include <vector>
+#include <sys/sysctl.h>
 
 /**
  * =====================
@@ -300,7 +301,7 @@ namespace Perf {
             l1_misses, llc_misses, branch_misses_retired,
             l2_misses, llc_references, reference_cycles,
 #elif defined(CPU_ARM64)
-            uops_scheduled, l1d_ld_miss, l1d_st_miss, atomic_fails, atomic_succs,
+            uops_scheduled, l1d_ld_miss, l1d_st_miss, atomic_fails, atomic_succs, mmu_faults, mapped_int_uops
 #endif
             })
             : measured_events(measured_events) {
@@ -308,9 +309,11 @@ namespace Perf {
             load_kperf();
 
             // Setup once to
-            _counters_size = kpc_get_counter_count(KPC_CLASSES_MASK);
+            _counters_size = kpc_get_counter_count(KPC_CLASSES_MASK) + 2;
             start_counters = new uint64_t[_counters_size];
+            memset(start_counters, 0xFF, _counters_size * sizeof(*start_counters));
             stop_counters = new uint64_t[_counters_size];
+            memset(stop_counters, 0xFF, _counters_size * sizeof(*stop_counters));
         }
 
         ~Counter() {
@@ -376,18 +379,37 @@ namespace Perf {
         uint64_t *stop_counters;
         std::chrono::time_point<std::chrono::steady_clock> start_time;
 
+        forceinline void kpc_get_thread_counters2(uint64_t *counters) const {
+            size_t sz = _counters_size * sizeof(*counters) * 100;
+            uint32_t tid = 0;
+            errno = 0;
+            int res = sysctlbyname("kpc.thread_counters", counters, &sz, &tid, sizeof(tid));
+            if (res) {
+                printf("WTF: %d %d %s out sz: %zu\n", res, errno, strerror(errno), sz);
+            } else {
+                printf("out sz: %zu\n", sz);
+            }
+        }
+
         forceinline void read_counters(uint64_t *counters) const {
+            printf("thread counters size: %zu\n", _counters_size);
+
             // Obtain counters for current thread
-            if (kpc_get_thread_counters(0, _counters_size, counters)) {
+            if (int ret = kpc_get_thread_counters(0, _counters_size, counters)) {
+                printf("FAIL! %s\n", strerror(ret));
                 PERF_ERROR("Failed to read current kpc config");
             }
+            // kpc_get_thread_counters2(counters);
         }
 
         forceinline void configure_counters() {
             auto configs_cnt = kpc_get_config_count(KPC_CLASSES_MASK);
             // std::cout << "[Perf::Counter] configs_cnt: " << configs_cnt << std::endl;
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-extension"
             uint64_t configs[configs_cnt];
+#pragma clang diagnostic pop
 
 #ifdef CPU_X86_64
             /**
@@ -467,7 +489,7 @@ namespace Perf {
                         l1_misses, llc_misses, branch_misses_retired,
                         l2_misses, llc_references, reference_cycles,
 #elif defined(CPU_ARM64)
-                        uops_scheduled, l1d_ld_miss, l1d_st_miss, atomic_fails, atomic_succs
+                        uops_scheduled, l1d_ld_miss, l1d_st_miss, atomic_fails, atomic_succs, mmu_faults, mapped_int_uops
 #endif
             })
             : Counter(measured_events), N(N) {
